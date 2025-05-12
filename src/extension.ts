@@ -7,6 +7,7 @@ import * as Diff from 'diff';
 import { getLineCol, calculateCorrections } from './correctionDiffing';
 import { OllamaLLM } from './ollamaIntegration';
 import { Task, TaskScheduler } from './taskScheduler';
+import { processDocument, restoreDocument } from './placeholders';
 
 type TextSnippet = {
 	text: string;
@@ -134,11 +135,13 @@ class LMWritingTool {
 	}
 
 	async getSnippetDiagnostics(snippet: string, token: vscode.CancellationToken) {
-		if (this.diagnosticsCache.has(snippet)) {
-			return this.diagnosticsCache.get(snippet) || {};
+		const cleaned = processDocument(snippet);
+		console.info(`Requesting diagnostics for: ${cleaned.cleanedText}`);
+		if (this.diagnosticsCache.has(cleaned.cleanedText)) {
+			return this.diagnosticsCache.get(cleaned.cleanedText) || {};
 		}
-		const diagnostic = await this.getTextSnippetDiagnostic(snippet, token);
-		this.diagnosticsCache.set(snippet, diagnostic);
+		const diagnostic = await this.getTextSnippetDiagnostic(cleaned.cleanedText, token);
+		this.diagnosticsCache.set(cleaned.cleanedText, diagnostic);
 	}
 
 	getCachedSnippetDiagnosticsAtLocation(document: vscode.TextDocument, location: vscode.Position): LocatedTextSnippetDiagnostic[] {
@@ -147,9 +150,15 @@ class LMWritingTool {
 		const snippetsAtLocation = snippets.filter(s => s.range.contains(location));
 
 		return snippetsAtLocation.map(s => {
-			if (this.diagnosticsCache.has(s.text)) {
+			const cleaned = processDocument(s.text);
+			if (this.diagnosticsCache.has(cleaned.cleanedText)) {
+				const diagnostics=this.diagnosticsCache.get(cleaned.cleanedText);
+				if(diagnostics?.correctedVersion){
+					cleaned.cleanedText=diagnostics.correctedVersion;
+					diagnostics.correctedVersion=restoreDocument(cleaned);
+				}
 				return {
-					diagnostic: this.diagnosticsCache.get(s.text),
+					diagnostic: diagnostics,
 					snippet: s
 				};
 			}

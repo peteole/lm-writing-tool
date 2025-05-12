@@ -4,6 +4,7 @@ import * as assert from 'assert';
 // as well as import your extension to test it
 import * as vscode from 'vscode';
 import { applyCorrections, calculateCorrections } from '../correctionDiffing';
+import { processDocument, restoreDocument } from '../placeholders';
 // import * as myExtension from '../../extension';
 
 suite('Extension Test Suite', () => {
@@ -18,5 +19,22 @@ suite('Extension Test Suite', () => {
 		const applied = applyCorrections(original, corrections);
 		assert.strictEqual(applied, corrected);
 
+	});
+
+	test('placeholders', ()=>{
+		function testPlaceholderSample(text: string, expectedCleanedText: string){
+			const processed=processDocument(text);
+			assert.strictEqual(processed.cleanedText, expectedCleanedText);
+			const restored = restoreDocument(processed);
+			assert.strictEqual(restored, text);
+		}
+		testPlaceholderSample(
+			"	\\textbf{This is a test} of \\textit{word} diffing.",
+			"This is a test of word diffing."
+		);
+		testPlaceholderSample(
+			"== This is a heading",
+			"This is a heading"
+		);
 	});
 });

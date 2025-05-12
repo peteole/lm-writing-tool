@@ -72,6 +72,7 @@
   },
   "dependencies": {
     "diff": "^7.0.0",
+    "fastest-levenshtein": "^1.0.16",
     "ollama": "0.5.14"
   },
   "repository": {

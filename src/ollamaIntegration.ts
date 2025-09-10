@@ -37,7 +37,7 @@ export class OllamaLLM implements vscode.LanguageModelChat {
         try {
             await ollama.list();
         } catch (error) {
-            console.warn('Could not reach ollama server', error);
+            console.warn('Could not reach ollama server. Select a copilot model.', error);
             vscode.window.showWarningMessage('Error creating OllamaLLM instance: ' + error);
             return;
         }

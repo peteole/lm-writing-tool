@@ -367,7 +367,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			throw new Error("No models found.");
 		}
 		let model = models[0];
-		if (models.length > 1) {
+		if (models.length > 0) {
 			function getQuickPickItem(m: vscode.LanguageModelChat) {
 				return `${m.vendor}: ${m.family} ${m.version}`;
 			}

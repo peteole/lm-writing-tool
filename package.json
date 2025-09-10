@@ -2,7 +2,7 @@
   "name": "lm-writing-tool",
   "displayName": "LLM Writing Tool",
   "description": "LLM-powered writing tool for VSCode. Checks your grammer using Ollama or Github Copilot.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "engines": {
     "vscode": "^1.102.0",
     "node": ">=20.0.0"

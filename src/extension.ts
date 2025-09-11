@@ -345,11 +345,56 @@ export async function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "lm-writing-tool" is now active!');
 
+	// Create status bar item for model selection
+	const modelStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+	modelStatusBarItem.command = 'lm-writing-tool.selectModel';
+	modelStatusBarItem.tooltip = 'Click to select LLM model';
+	modelStatusBarItem.text = "$(robot) No model selected";
+	modelStatusBarItem.show();
+	context.subscriptions.push(modelStatusBarItem);
+
+	// Create status bar item for text check status
+	const textCheckStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+	textCheckStatusBarItem.command = 'lm-writing-tool.toggleTextCheck';
+	textCheckStatusBarItem.tooltip = 'Click to toggle text checking for current document';
+	textCheckStatusBarItem.text = "$(eye-closed) Text check: Off";
+	textCheckStatusBarItem.show();
+	context.subscriptions.push(textCheckStatusBarItem);
+
 	let _lmwt: LMWritingTool | undefined;
+	let _currentModel: vscode.LanguageModelChat | undefined;
+
+	function updateStatusBar() {
+		if (_currentModel) {
+			modelStatusBarItem.text = `$(robot) ${_currentModel.vendor}: ${_currentModel.family}`;
+		} else {
+			modelStatusBarItem.text = "$(robot) No model selected";
+		}
+	}
+
+	function updateTextCheckStatusBar() {
+		const activeEditor = vscode.window.activeTextEditor;
+		if (!activeEditor) {
+			textCheckStatusBarItem.text = "$(eye-closed) Text check: Off";
+			textCheckStatusBarItem.tooltip = 'No active document';
+			return;
+		}
+
+		const isActive = textCheckJobs.has(activeEditor);
+		if (isActive) {
+			textCheckStatusBarItem.text = "$(eye) Text check: On";
+			textCheckStatusBarItem.tooltip = 'Click to stop text checking for current document';
+		} else {
+			textCheckStatusBarItem.text = "$(eye-closed) Text check: Off";
+			textCheckStatusBarItem.tooltip = 'Click to start text checking for current document';
+		}
+	}
 	async function getLMWT() {
 		if (!_lmwt) {
 			const model = await selectModel();
 			_lmwt = new LMWritingTool(model, splitTextByLine, dc);
+			_currentModel = model;
+			updateStatusBar();
 		}
 		return _lmwt;
 	}
@@ -384,11 +429,50 @@ export async function activate(context: vscode.ExtensionContext) {
 		return model;
 	}
 	context.subscriptions.push(
-		vscode.commands.registerTextEditorCommand('lm-writing-tool.selectModel', async (te) => {
+		vscode.commands.registerCommand('lm-writing-tool.selectModel', async () => {
 			const model = await selectModel();
 			stopAllJobs();
 			_lmwt = new LMWritingTool(model, splitTextByLine, dc);
+			_currentModel = model;
+			updateStatusBar();
+		})
+	);
 
+	context.subscriptions.push(
+		vscode.commands.registerCommand('lm-writing-tool.toggleTextCheck', async () => {
+			const activeEditor = vscode.window.activeTextEditor;
+			if (!activeEditor) {
+				vscode.window.showInformationMessage('No active document to check');
+				return;
+			}
+
+			const isActive = textCheckJobs.has(activeEditor);
+			if (isActive) {
+				// Stop text checking
+				const interval = textCheckJobs.get(activeEditor);
+				if (interval) {
+					clearInterval(interval);
+					textCheckJobs.delete(activeEditor);
+				}
+				const lmwt = await getLMWT();
+				lmwt.taskScheduler.setTasks(new Map(), activeEditor.document.uri.toString());
+				lmwt.dc.set(activeEditor.document.uri, []);
+				lmwt.corrections.delete(activeEditor.document.uri.toString());
+				vscode.window.showInformationMessage('Text checking stopped for current document');
+			} else {
+				// Start text checking
+				const openTextDocument = activeEditor.document;
+				const lmwt = await getLMWT();
+				textCheckJobs.set(activeEditor, setInterval(async () => {
+					console.info('Checking document');
+					lmwt.sendLLMRequestsForDocument(openTextDocument);
+				}, 5000));
+
+				// Register code actions provider if not already registered
+				context.subscriptions.push(vscode.languages.registerCodeActionsProvider('*', new WritingToolCodeActionsProvider(lmwt), {}));
+				vscode.window.showInformationMessage('Text checking started for current document');
+			}
+			updateTextCheckStatusBar();
 		})
 	);
 
@@ -406,6 +490,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			}, 5000));
 
 			context.subscriptions.push(vscode.languages.registerCodeActionsProvider('*', new WritingToolCodeActionsProvider(lmwt), {}));
+			updateTextCheckStatusBar();
 		})
 	);
 
@@ -505,8 +590,19 @@ export async function activate(context: vscode.ExtensionContext) {
 			lmwt.taskScheduler.setTasks(new Map(), te.document.uri.toString());
 			lmwt.dc.set(te.document.uri, []);
 			lmwt.corrections.delete(te.document.uri.toString());
+			updateTextCheckStatusBar();
 		})
 	);
+	// Update status bars when active editor changes
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor(() => {
+			updateTextCheckStatusBar();
+		})
+	);
+
+	// Initialize status bars
+	updateTextCheckStatusBar();
+
 	// Cleanup the interval on extension deactivation
 	async function stopAllJobs() {
 		for (const [te, interval] of textCheckJobs.entries()) {
@@ -517,6 +613,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		lmwt.taskScheduler.abortAll();
 		lmwt.dc.clear();
 		lmwt.corrections.clear();
+		updateTextCheckStatusBar();
 	}
 	context.subscriptions.push({
 		dispose: stopAllJobs

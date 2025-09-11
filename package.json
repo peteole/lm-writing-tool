@@ -2,7 +2,7 @@
   "name": "lm-writing-tool",
   "displayName": "LLM Writing Tool",
   "description": "LLM-powered writing tool for VSCode. Checks your grammer using Ollama or Github Copilot.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "engines": {
     "vscode": "^1.102.0",
     "node": ">=20.0.0"
@@ -28,6 +28,10 @@
       {
         "command": "lm-writing-tool.stopTextCheckCurrentDocument",
         "title": "LLM writing tool: Stop Text Check for Current Document"
+      },
+      {
+        "command": "lm-writing-tool.toggleTextCheck",
+        "title": "LLM writing tool: Toggle Text Check for Current Document"
       },
       {
         "command": "lm-writing-tool.rewriteSelection",

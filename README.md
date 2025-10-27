@@ -127,7 +127,23 @@ Set `lmWritingTool.ollama.model` to `llama3.1:8b` for better quality (but slower
 ## Installation  
 
 1. Install the extension from the [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=OlePetersen.lm-writing-tool).  
-2. Install [Ollama](https://ollama.com/) and pull `llama3.2:3b` for local grammar checking, or subscribe to GitHub Copilot for online LLM access.  
+2. Install [Ollama](https://ollama.com/) and pull `llama3.2:3b` for local grammar checking, or subscribe to GitHub Copilot for online LLM access.
+3. Choose your LLM backend:
+   - **Local (Ollama)**: Install [Ollama](https://ollama.com/) and pull `llama3.2:3b` by running:
+     ```bash
+     ollama pull llama3.2:3b
+     ```
+     Ensure Ollama is running with:
+     ```bash
+     ollama list
+     ```
+     If Ollama isn't already running, start it with:
+     ```bash
+     ollama serve
+     ```
+     
+   - **Remote (GitHub Copilot)**: Subscribe to [GitHub Copilot](https://github.com/features/copilot) for online LLM access.
+
 
 ## How It Works  
 

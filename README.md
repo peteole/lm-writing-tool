@@ -14,7 +14,16 @@ This extension bridges the gap by leveraging large language models (LLMs). It ch
 - **Rewrite suggestions** to improve clarity  
 - **Synonym recommendations** for better word choices  
 - **Configurable system prompts** to customize language variant, writing style, and behavior
-- **Configurable Ollama models** to use any local model that fits your needs and hardware  
+- **Configurable Ollama models** to use any local model that fits your needs and hardware
+
+## Getting Started
+
+1. Either install and start [Ollama](https://ollama.com/) or subscribe and sign in to [GitHub Copilot](https://github.com/features/copilot).
+2. In VS Code, open the document you want the LLM Writing Tool to assist you with.
+3. Press  `Shift+Cmd+P` on macOS, `Ctrl+Cmd+P` on Windows/Linux.
+4. In the prompt type one of the available commands. For example **"LLM Writing Tool: Start Text Check for Current Document"**.
+5. If not already done the extension  should prompt you to pull llama3.2.
+6. Depending on the commend used you can observe the results and accept/reject the suggestion.
 
 ## Commands  
 

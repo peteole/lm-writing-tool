@@ -15,6 +15,7 @@ This extension bridges the gap by leveraging large language models (LLMs). It ch
 - **Synonym recommendations** for better word choices  
 - **Configurable system prompts** to customize language variant, writing style, and behavior
 - **Configurable Ollama models** to use any local model that fits your needs and hardware
+- **Multilingual checking** in any language the model supports, selectable via a quick command
 
 ## Getting Started
 
@@ -42,8 +43,10 @@ When the first command is executed, a dialog appears allowing users to select ei
   Rewrites the selected text for clarity.
 - **"LLM writing tool: Get synonyms for selection"**
   Suggests synonyms for the selected expression.
-- **"LLM writing tool: Select model"**
+- **"LLM writing tool: Select model"**  
   Selects the LLM model to use for grammar checking. Stops real-time grammar checking if it is running.
+- **"LLM writing tool: Select language"**
+  Selects the language used for proofreading, rewriting, and synonyms. Choose from common languages or enter your own.
 - **"LLM writing tool: Reset prompts to defaults"**
   Resets all customized system prompts back to their default values.
 - **"LLM writing tool: Reset all settings to defaults"**
@@ -94,6 +97,11 @@ When customizing prompts, use these placeholders:
 
 - `{text}` - The text to be processed (for proofreading and rewrite prompts)
 - `{expression}` - The selected expression (for synonyms prompt)
+- `{language}` - The language configured via `lmWritingTool.language` (e.g. "British English", "German")
+
+### Language
+
+By default the tool checks and writes in American English. To switch languages, either run the **"LLM writing tool: Select language"** command (choose from common languages or enter your own) or set `lmWritingTool.language` directly. Most modern LLMs are multilingual, so the same model can proofread many languages. The default prompts insert this value via the `{language}` placeholder, so changing the language does not require editing prompts.
 
 ### Example Customizations
 

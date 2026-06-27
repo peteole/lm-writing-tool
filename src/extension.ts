@@ -66,25 +66,23 @@ function maskLatexProse(text: string): boolean[] {
 			mask[k] = false;
 		}
 	};
-	// Masks a balanced {...} or [...] group starting at `start`; returns the index after it.
-	const maskBalancedGroup = (start: number): number => {
+	// Finds the index just after the balanced {...} or [...] group starting at `start`,
+	// or -1 if it is never closed (so callers can avoid masking the rest of the file).
+	const findGroupEnd = (start: number): number => {
 		const open = text[start];
 		const close = open === '{' ? '}' : ']';
 		let depth = 0;
-		let k = start;
-		for (; k < n; k++) {
-			mask[k] = false;
+		for (let k = start; k < n; k++) {
 			if (text[k] === open) {
 				depth++;
 			} else if (text[k] === close) {
 				depth--;
 				if (depth === 0) {
-					k++;
-					break;
+					return k + 1;
 				}
 			}
 		}
-		return k;
+		return -1;
 	};
 
 	let i = 0;
@@ -209,7 +207,13 @@ function maskLatexProse(text: string): boolean[] {
 			if (LATEX_STRUCTURAL_NAMES.has(name)) {
 				maskRange(i, k);
 				while (k < n && (text[k] === '{' || text[k] === '[')) {
-					k = maskBalancedGroup(k);
+					const groupEnd = findGroupEnd(k);
+					if (groupEnd === -1) {
+						// Unclosed argument: stop here rather than masking the rest of the file.
+						break;
+					}
+					maskRange(k, groupEnd);
+					k = groupEnd;
 				}
 				i = k;
 				continue;

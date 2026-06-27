@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as Diff from 'diff';
 import { getLineCol, calculateCorrections } from './correctionDiffing';
 import { OllamaLLM } from './ollamaIntegration';
+import { LMStudioLLM } from './lmStudioIntegration';
 import { Task, TaskScheduler } from './taskScheduler';
 
 type TextSnippet = {
@@ -407,6 +408,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		const ollamaLLM = await OllamaLLM.create();
 		if (ollamaLLM) {
 			models.push(ollamaLLM);
+		}
+		const lmStudioLLM = await LMStudioLLM.create();
+		if (lmStudioLLM) {
+			models.push(lmStudioLLM);
 		}
 		if (models.length === 0) {
 			throw new Error("No models found.");

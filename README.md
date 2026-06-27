@@ -10,7 +10,7 @@ This extension bridges the gap by leveraging large language models (LLMs). It ch
 
 - **LLM-powered grammar checking** in American English  
 - **Inline corrections** via quick fixes  
-- **Choice of models**: Use a local `llama3.2:3b` model via [Ollama](https://ollama.com/) or `gpt-40-mini` through the [VSCode LM API](https://code.visualstudio.com/api/extension-guides/language-model)  
+- **Choice of models**: Use a local `llama3.2:3b` model via [Ollama](https://ollama.com/), a local model served by [LM Studio](https://lmstudio.ai/), or `gpt-40-mini` through the [VSCode LM API](https://code.visualstudio.com/api/extension-guides/language-model)  
 - **Rewrite suggestions** to improve clarity  
 - **Synonym recommendations** for better word choices  
 - **Configurable system prompts** to customize language variant, writing style, and behavior
@@ -87,6 +87,18 @@ The extension now supports configurable system prompts and Ollama model selectio
   Specifies which Ollama model to use for local text processing.  
   *Default*: `llama3.2:3b`  
   *Examples*: `llama3.2:1b`, `llama3.1:8b`, `codellama:7b`, `mistral:7b`
+
+**LM Studio Configuration:**
+
+[LM Studio](https://lmstudio.ai/) is an alternative way to run local models. Start its OpenAI-compatible server from the **Developer** tab (or run `lms server start`) and load a model. The extension will then offer it in the model selection dialog.
+
+- **`lmWritingTool.lmStudio.baseUrl`**  
+  Base URL of the LM Studio server.  
+  *Default*: `http://localhost:1234/v1`
+
+- **`lmWritingTool.lmStudio.model`**  
+  Which loaded LM Studio model to use. Leave empty to use the first model currently loaded.  
+  *Default*: *(empty)*
 
 ### Placeholders
 

@@ -585,13 +585,23 @@ export async function activate(context: vscode.ExtensionContext) {
 				const custom = await vscode.window.showInputBox({
 					prompt: 'Enter the language to use (e.g. "Brazilian Portuguese")',
 					placeHolder: 'Language',
+					validateInput: (value) => value.trim().length === 0 ? 'Please enter a language' : undefined,
 				});
-				if (!custom) {
+				if (custom === undefined || custom.trim().length === 0) {
 					return;
 				}
 				language = custom.trim();
 			}
-			await vscode.workspace.getConfiguration('lmWritingTool').update('language', language, vscode.ConfigurationTarget.Global);
+			const cfg = vscode.workspace.getConfiguration('lmWritingTool');
+			// Write to the scope that is currently in effect so the change is actually applied.
+			const inspected = cfg.inspect<string>('language');
+			let target = vscode.ConfigurationTarget.Global;
+			if (inspected?.workspaceFolderValue !== undefined) {
+				target = vscode.ConfigurationTarget.WorkspaceFolder;
+			} else if (inspected?.workspaceValue !== undefined) {
+				target = vscode.ConfigurationTarget.Workspace;
+			}
+			await cfg.update('language', language, target);
 			if (_lmwt) {
 				_lmwt.diagnosticsCache.clear();
 			}
@@ -627,6 +637,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// Reset language to default
 			await vscode.workspace.getConfiguration('lmWritingTool').update('language', undefined, vscode.ConfigurationTarget.Global);
+
+			// Clear cached diagnostics so they are recomputed with the restored language.
+			if (_lmwt) {
+				_lmwt.diagnosticsCache.clear();
+			}
 
 			vscode.window.showInformationMessage('All extension settings have been reset to their default values');
 		})

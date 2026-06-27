@@ -152,7 +152,7 @@ Set `lmWritingTool.ollama.model` to `llama3.1:8b` for better quality (but slower
 When editing a LaTeX document (language mode `latex`), the extension automatically uses a LaTeX-aware splitter that only proofreads natural-language prose. It skips:
 
 - Line comments (`% ...`)
-- Math environments (e.g. `equation`, `align`, `displaymath`) and display math (`\[ ... \]`, `$$ ... $$`)
+- Math environments (e.g. `equation`, `align`, `displaymath`), display math (`\[ ... \]`, `$$ ... $$`), and inline math (`$ ... $`, `\( ... \)`)
 - Verbatim/code environments (e.g. `verbatim`, `lstlisting`, `minted`) and `tikzpicture`
 - Structural, prose-free commands (e.g. `\begin{...}`, `\usepackage{...}`, `\label{...}`, `\cite{...}`)
 

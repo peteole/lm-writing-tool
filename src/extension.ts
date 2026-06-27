@@ -74,10 +74,31 @@ function maskLatexProse(text: string): boolean[] {
 			if (braceEnd !== -1) {
 				const env = text.substring(i + 7, braceEnd);
 				if (LATEX_SKIP_ENVIRONMENTS.has(env)) {
-					const closeTok = `\\end{${env}}`;
-					const closeIdx = text.indexOf(closeTok, braceEnd + 1);
-					if (closeIdx !== -1) {
-						const end = closeIdx + closeTok.length;
+					// Match the closing \end{env} accounting for nested same-name environments.
+					const beginTok = `\\begin{${env}}`;
+					const endTok = `\\end{${env}}`;
+					let depth = 1;
+					let search = braceEnd + 1;
+					let end = -1;
+					while (search < n) {
+						const nextBegin = text.indexOf(beginTok, search);
+						const nextEnd = text.indexOf(endTok, search);
+						if (nextEnd === -1) {
+							break;
+						}
+						if (nextBegin !== -1 && nextBegin < nextEnd) {
+							depth++;
+							search = nextBegin + beginTok.length;
+						} else {
+							depth--;
+							search = nextEnd + endTok.length;
+							if (depth === 0) {
+								end = search;
+								break;
+							}
+						}
+					}
+					if (end !== -1) {
 						maskRange(i, end);
 						i = end;
 						continue;
@@ -97,11 +118,35 @@ function maskLatexProse(text: string): boolean[] {
 			i++;
 			continue;
 		}
+		if (text.startsWith('\\(', i)) {
+			const closeIdx = text.indexOf('\\)', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
 		if (text.startsWith('$$', i)) {
 			const closeIdx = text.indexOf('$$', i + 2);
 			if (closeIdx !== -1) {
 				maskRange(i, closeIdx + 2);
 				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (ch === '$' && (i === 0 || text[i - 1] !== '\\')) {
+			// Inline math: find the next unescaped closing dollar.
+			let j = i + 1;
+			while (j < n && !(text[j] === '$' && text[j - 1] !== '\\')) {
+				j++;
+			}
+			if (j < n) {
+				maskRange(i, j + 1);
+				i = j + 1;
 				continue;
 			}
 			i++;

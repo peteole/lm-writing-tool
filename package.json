@@ -64,6 +64,7 @@
         "lmWritingTool.language": {
           "type": "string",
           "default": "American English",
+          "scope": "window",
           "description": "The language to proofread, rewrite, and find synonyms in. Used by the default prompts via the {language} placeholder. Set it quickly with the 'LLM writing tool: Select language' command. Examples: 'British English', 'German', 'French'."
         },
         "lmWritingTool.prompts.proofreading": {

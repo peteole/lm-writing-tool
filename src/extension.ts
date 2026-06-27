@@ -167,6 +167,11 @@ class LMWritingTool {
 			return this.diagnosticsCache.get(snippet) || {};
 		}
 		const diagnostic = await this.getTextSnippetDiagnostic(snippet, token);
+		// Don't cache results from a request that was cancelled (e.g. by a language change),
+		// otherwise a late response could repopulate the cache with stale-language results.
+		if (token.isCancellationRequested) {
+			return;
+		}
 		this.diagnosticsCache.set(snippet, diagnostic);
 	}
 
@@ -643,8 +648,10 @@ export async function activate(context: vscode.ExtensionContext) {
 			// Reset Ollama model to default
 			await ollamaConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
 
-			// Reset language to default
-			await vscode.workspace.getConfiguration('lmWritingTool').update('language', undefined, vscode.ConfigurationTarget.Global);
+			// Reset language to default in both user and workspace scopes (it may be set in either).
+			const languageConfig = vscode.workspace.getConfiguration('lmWritingTool');
+			await languageConfig.update('language', undefined, vscode.ConfigurationTarget.Global);
+			await languageConfig.update('language', undefined, vscode.ConfigurationTarget.Workspace);
 
 			// Discard cached results and pending work so they are recomputed with the restored language.
 			invalidateDiagnostics();

@@ -29,7 +29,7 @@ type DelimiterPair = { open: string; close: string };
 
 function parseDelimiters(raw: string[]): DelimiterPair[] {
 	return raw
-		.filter(d => d.length > 0)
+		.filter((d): d is string => typeof d === 'string' && d.length > 0)
 		.map(d => d.length >= 2 ? { open: d[0], close: d[d.length - 1] } : { open: d, close: d });
 }
 
@@ -155,11 +155,11 @@ class LMWritingTool {
 	private getSplitter(): (text: string) => TextSnippet[] {
 		const config = vscode.workspace.getConfiguration('lmWritingTool');
 		if (config.get<boolean>('checkOnlyDelimited')) {
-			const raw = config.get<string[]>('delimiters') || ['"'];
-			const pairs = parseDelimiters(raw);
-			if (pairs.length > 0) {
-				return (text: string) => splitTextByDelimiters(text, pairs);
-			}
+			const raw = config.get<string[]>('delimiters');
+			const pairs = parseDelimiters(Array.isArray(raw) ? raw : ['"']);
+			// When the option is on, only delimited regions are checked. If no valid
+			// delimiters are configured, nothing is checked (rather than whole lines).
+			return (text: string) => splitTextByDelimiters(text, pairs);
 		}
 		return this.textSplitterFunction;
 	}

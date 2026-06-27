@@ -604,17 +604,13 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 				language = custom.trim();
 			}
-			// Scope the config to the active document so multi-root workspaces update the right folder.
-			const resource = vscode.window.activeTextEditor?.document.uri;
-			const cfg = vscode.workspace.getConfiguration('lmWritingTool', resource);
-			// Write to the scope that is currently in effect so the change is actually applied.
+			// The language is a window-scoped preference. Write to the workspace if it is
+			// already overridden there, otherwise to the user (global) settings.
+			const cfg = vscode.workspace.getConfiguration('lmWritingTool');
 			const inspected = cfg.inspect<string>('language');
-			let target = vscode.ConfigurationTarget.Global;
-			if (inspected?.workspaceFolderValue !== undefined) {
-				target = vscode.ConfigurationTarget.WorkspaceFolder;
-			} else if (inspected?.workspaceValue !== undefined) {
-				target = vscode.ConfigurationTarget.Workspace;
-			}
+			const target = inspected?.workspaceValue !== undefined
+				? vscode.ConfigurationTarget.Workspace
+				: vscode.ConfigurationTarget.Global;
 			await cfg.update('language', language, target);
 			invalidateDiagnostics();
 			vscode.window.showInformationMessage(`LLM Writing Tool language set to: ${language}`);
@@ -673,6 +669,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor(() => {
 			updateTextCheckStatusBar();
+		})
+	);
+
+	// Recompute diagnostics when language or prompts change (e.g. via the Settings UI),
+	// since cached results depend on these values.
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration('lmWritingTool.language') || event.affectsConfiguration('lmWritingTool.prompts')) {
+				invalidateDiagnostics();
+			}
 		})
 	);
 

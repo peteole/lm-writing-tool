@@ -95,7 +95,8 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: this.family,
+                        // Re-read the setting on each request so model changes take effect without reselecting.
+                        model: getConfiguredModel() || this.family,
                         messages: stringMessages,
                         temperature: 0,
                         top_p: 0.5,
@@ -109,11 +110,34 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
             }
 
             if (!response.ok || !response.body) {
-                reject(`LM Studio returned an error: HTTP ${response.status}`);
+                const detail = await response.text().catch(() => '');
+                reject(`LM Studio returned an error: HTTP ${response.status}${detail ? ` - ${detail}` : ''}`);
                 return;
             }
 
             const body = response.body;
+            function parseLine(line: string): string | undefined {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data:')) {
+                    return;
+                }
+                const data = trimmed.slice('data:'.length).trim();
+                if (data === '[DONE]') {
+                    return;
+                }
+                let parsed: { choices?: { delta?: { content?: string } }[]; error?: { message?: string } | string };
+                try {
+                    parsed = JSON.parse(data);
+                } catch (error) {
+                    console.warn('Could not parse LM Studio stream chunk', data, error);
+                    return;
+                }
+                if (parsed.error) {
+                    const message = typeof parsed.error === 'string' ? parsed.error : parsed.error.message;
+                    throw new Error(`LM Studio error: ${message || 'unknown error'}`);
+                }
+                return parsed.choices?.[0]?.delta?.content || undefined;
+            }
             async function* deltas(): AsyncGenerator<string> {
                 const reader = body.getReader();
                 const decoder = new TextDecoder();
@@ -127,23 +151,18 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
                     const lines = buffer.split('\n');
                     buffer = lines.pop() || '';
                     for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (!trimmed.startsWith('data:')) {
-                            continue;
+                        const content = parseLine(line);
+                        if (content) {
+                            yield content;
                         }
-                        const data = trimmed.slice('data:'.length).trim();
-                        if (data === '[DONE]') {
-                            return;
-                        }
-                        try {
-                            const parsed = JSON.parse(data) as { choices?: { delta?: { content?: string } }[] };
-                            const content = parsed.choices?.[0]?.delta?.content;
-                            if (content) {
-                                yield content;
-                            }
-                        } catch (error) {
-                            console.warn('Could not parse LM Studio stream chunk', data, error);
-                        }
+                    }
+                }
+                // Flush any final line that arrived without a trailing newline.
+                const tail = (buffer + decoder.decode()).trim();
+                if (tail.length > 0) {
+                    const content = parseLine(tail);
+                    if (content) {
+                        yield content;
                     }
                 }
             }

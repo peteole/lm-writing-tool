@@ -38,76 +38,110 @@ const LATEX_SKIP_ENVIRONMENTS = new Set([
 const LATEX_STRUCTURAL_COMMAND = /^\\(begin|end|usepackage|documentclass|input|include|includegraphics|label|ref|eqref|pageref|cite|nocite|bibliography|bibliographystyle|addbibresource|printbibliography|newcommand|renewcommand|providecommand|def|hline|toprule|midrule|bottomrule|centering|raggedright|noindent|clearpage|cleardoublepage|newpage|pagebreak|vspace\*?|hspace\*?|tableofcontents|listoffigures|listoftables|maketitle|appendix|hrule|bigskip|medskip|smallskip)\b/;
 
 /**
- * Removes a trailing LaTeX line comment (the first unescaped `%` to end of line).
+ * Builds a boolean mask over `text` where `true` marks characters that are
+ * natural-language prose and `false` marks characters that should not be
+ * proofread: comments, math/verbatim environments, and display math.
+ *
+ * A single forward scan is used. Regions are only masked when their closing
+ * delimiter is found, so an unclosed environment or math block is treated as
+ * prose rather than swallowing the rest of the document. Verbatim/math contents
+ * are skipped to their literal `\end{...}`, so any `\begin{...}` shown as
+ * example code inside them is ignored.
  */
-function stripLatexComment(line: string): string {
-	for (let i = 0; i < line.length; i++) {
-		if (line[i] === '%' && (i === 0 || line[i - 1] !== '\\')) {
-			return line.substring(0, i);
+function maskLatexProse(text: string): boolean[] {
+	const n = text.length;
+	const mask = new Array<boolean>(n).fill(true);
+	const maskRange = (from: number, to: number) => {
+		for (let k = from; k < to; k++) {
+			mask[k] = false;
 		}
+	};
+
+	let i = 0;
+	while (i < n) {
+		const ch = text[i];
+		if (ch === '%' && (i === 0 || text[i - 1] !== '\\')) {
+			let j = i;
+			while (j < n && text[j] !== '\n') {
+				mask[j] = false;
+				j++;
+			}
+			i = j;
+			continue;
+		}
+		if (text.startsWith('\\begin{', i)) {
+			const braceEnd = text.indexOf('}', i + 7);
+			if (braceEnd !== -1) {
+				const env = text.substring(i + 7, braceEnd);
+				if (LATEX_SKIP_ENVIRONMENTS.has(env)) {
+					const closeTok = `\\end{${env}}`;
+					const closeIdx = text.indexOf(closeTok, braceEnd + 1);
+					if (closeIdx !== -1) {
+						const end = closeIdx + closeTok.length;
+						maskRange(i, end);
+						i = end;
+						continue;
+					}
+				}
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('\\[', i)) {
+			const closeIdx = text.indexOf('\\]', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('$$', i)) {
+			const closeIdx = text.indexOf('$$', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		i++;
 	}
-	return line;
+	return mask;
 }
 
 /**
- * Splits LaTeX source into line snippets, skipping content that is not natural
+ * Splits LaTeX source into prose snippets, skipping content that is not natural
  * language: comments, math/verbatim environments, display math, and structural
- * commands. This keeps the proofreader focused on prose and avoids mangling code.
+ * commands. Each contiguous run of prose on a line becomes its own snippet, so
+ * prose that shares a line with skipped markup is still checked.
  */
 function splitLatex(text: string): TextSnippet[] {
 	const snippets: TextSnippet[] = [];
+	const mask = maskLatexProse(text);
 	const lines = text.split('\n');
-	let skipDepth = 0;
-	let inDisplayMath = false;
-	const beginEndRe = /\\(begin|end)\{([^}]*)\}/g;
-
+	let offset = 0;
 	for (let line = 0; line < lines.length; line++) {
-		const skippingAtLineStart = skipDepth > 0 || inDisplayMath;
-		const content = stripLatexComment(lines[line]);
-
-		beginEndRe.lastIndex = 0;
-		let match: RegExpExecArray | null;
-		while ((match = beginEndRe.exec(content)) !== null) {
-			const [, kind, env] = match;
-			if (!LATEX_SKIP_ENVIRONMENTS.has(env)) {
+		const l = lines[line];
+		let col = 0;
+		while (col < l.length) {
+			if (!mask[offset + col]) {
+				col++;
 				continue;
 			}
-			if (kind === 'begin') {
-				skipDepth++;
-			} else {
-				skipDepth = Math.max(0, skipDepth - 1);
+			const runStart = col;
+			while (col < l.length && mask[offset + col]) {
+				col++;
+			}
+			const runText = l.substring(runStart, col);
+			const trimmed = runText.trim();
+			if (trimmed.length > 0 && /[a-zA-Z]/.test(trimmed) && !LATEX_STRUCTURAL_COMMAND.test(trimmed)) {
+				snippets.push({ text: runText, range: new vscode.Range(line, runStart, line, col) });
 			}
 		}
-
-		const trimmed = content.trim();
-		const opensDisplayMath = (content.split('\\[').length - 1) > (content.split('\\]').length - 1)
-			|| ((content.split('$$').length - 1) % 2 === 1);
-		const closesDisplayMath = (content.split('\\]').length - 1) > (content.split('\\[').length - 1)
-			|| ((content.split('$$').length - 1) % 2 === 1);
-		if (!inDisplayMath && opensDisplayMath) {
-			inDisplayMath = true;
-		} else if (inDisplayMath && closesDisplayMath) {
-			inDisplayMath = false;
-		}
-
-		if (skippingAtLineStart) {
-			continue;
-		}
-		if (trimmed.length === 0) {
-			continue;
-		}
-		if (trimmed.startsWith('%')) {
-			continue;
-		}
-		if (LATEX_STRUCTURAL_COMMAND.test(trimmed)) {
-			continue;
-		}
-		if (!/[a-zA-Z]/.test(trimmed)) {
-			continue;
-		}
-
-		const range = new vscode.Range(line, 0, line, content.length);
-		snippets.push({ text: content, range });
+		offset += l.length + 1;
 	}
 	return snippets;
 }

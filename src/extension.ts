@@ -34,6 +34,30 @@ function parseDelimiters(raw: string[]): DelimiterPair[] {
 }
 
 /**
+ * Maps a position that is `relLine`/`relCol` into a snippet back to an absolute
+ * document position. On the first snippet line the column is relative to the
+ * snippet start; on subsequent lines it is an absolute column.
+ */
+function offsetPosition(base: vscode.Position, relLine: number, relCol: number): vscode.Position {
+	if (relLine === 0) {
+		return new vscode.Position(base.line, base.character + relCol);
+	}
+	return new vscode.Position(base.line + relLine, relCol);
+}
+
+/**
+ * Finds the next occurrence of `needle` at or after `from` that is not escaped
+ * by a preceding backslash.
+ */
+function indexOfUnescaped(text: string, needle: string, from: number): number {
+	let idx = text.indexOf(needle, from);
+	while (idx > 0 && text[idx - 1] === '\\') {
+		idx = text.indexOf(needle, idx + needle.length);
+	}
+	return idx;
+}
+
+/**
  * Splits text into the regions enclosed by the configured delimiter pairs
  * (e.g. quotation marks). Only the content between delimiters is returned, so
  * grammar checking is limited to those regions.
@@ -48,9 +72,12 @@ function splitTextByDelimiters(text: string, pairs: DelimiterPair[]): TextSnippe
 			continue;
 		}
 		const contentStart = i + matched.open.length;
-		const closeIdx = text.indexOf(matched.close, contentStart);
+		const closeIdx = indexOfUnescaped(text, matched.close, contentStart);
 		if (closeIdx === -1) {
-			break;
+			// No matching close delimiter: skip past this opener and keep scanning
+			// so later well-formed regions are still extracted.
+			i = contentStart;
+			continue;
 		}
 		const content = text.substring(contentStart, closeIdx);
 		if (content.trim().length > 0) {
@@ -300,8 +327,8 @@ class LMWritingTool {
 				for (const correction of corrections) {
 					const { line: startLineRelative, col: startColRelative } = getLineCol(snippet.text, correction.start);
 					const { line: endLineRelative, col: endColRelative } = getLineCol(snippet.text, correction.end);
-					const start = snippet.range.start.translate(startLineRelative, startColRelative);
-					const end = snippet.range.start.translate(endLineRelative, endColRelative);
+					const start = offsetPosition(snippet.range.start, startLineRelative, startColRelative);
+					const end = offsetPosition(snippet.range.start, endLineRelative, endColRelative);
 					const range = new vscode.Range(start, end);
 					const text = correction.toInsert === "" ? "Remove" : `Change to: ${correction.toInsert}`;
 					const diagnostic = new vscode.Diagnostic(range, text, vscode.DiagnosticSeverity.Information);

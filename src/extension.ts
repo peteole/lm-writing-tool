@@ -573,6 +573,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('lm-writing-tool.resetSettings', async () => {
 			const promptsConfig = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 			const ollamaConfig = vscode.workspace.getConfiguration('lmWritingTool.ollama');
+			const lmStudioConfig = vscode.workspace.getConfiguration('lmWritingTool.lmStudio');
 
 			// Reset all prompts to their default values
 			await promptsConfig.update('proofreading', undefined, vscode.ConfigurationTarget.Global);
@@ -581,6 +582,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// Reset Ollama model to default
 			await ollamaConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
+
+			// Reset LM Studio settings to defaults
+			await lmStudioConfig.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
+			await lmStudioConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
 
 			vscode.window.showInformationMessage('All extension settings have been reset to their default values');
 		})

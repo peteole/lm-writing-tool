@@ -25,6 +25,264 @@ function splitTextByLine(text: string): TextSnippet[] {
 	return snippets;
 }
 
+// LaTeX environments whose contents are not natural-language prose and should not be proofread.
+const LATEX_SKIP_ENVIRONMENTS = new Set([
+	'equation', 'equation*', 'align', 'align*', 'alignat', 'alignat*',
+	'gather', 'gather*', 'multline', 'multline*', 'displaymath', 'math',
+	'eqnarray', 'eqnarray*', 'array', 'matrix', 'pmatrix', 'bmatrix',
+	'vmatrix', 'Vmatrix', 'smallmatrix', 'cases', 'verbatim', 'Verbatim',
+	'lstlisting', 'minted', 'tikzpicture', 'pgfpicture',
+]);
+
+// Structural LaTeX commands that contain no prose to check. Their command token and
+// any immediately following [...] / {...} arguments are masked, so prose that shares a
+// line with them is still proofread (\begin and \end are handled separately).
+const LATEX_STRUCTURAL_NAMES = new Set([
+	'usepackage', 'documentclass', 'input', 'include', 'includegraphics', 'label',
+	'ref', 'eqref', 'pageref', 'cite', 'nocite', 'bibliography', 'bibliographystyle',
+	'addbibresource', 'printbibliography', 'newcommand', 'renewcommand', 'providecommand',
+	'def', 'hline', 'toprule', 'midrule', 'bottomrule', 'centering', 'raggedright',
+	'noindent', 'clearpage', 'cleardoublepage', 'newpage', 'pagebreak', 'vspace', 'hspace',
+	'tableofcontents', 'listoffigures', 'listoftables', 'maketitle', 'appendix', 'hrule',
+	'bigskip', 'medskip', 'smallskip',
+]);
+
+/**
+ * Builds a boolean mask over `text` where `true` marks characters that are
+ * natural-language prose and `false` marks characters that should not be
+ * proofread: comments, math/verbatim environments, and display math.
+ *
+ * A single forward scan is used. Regions are only masked when their closing
+ * delimiter is found, so an unclosed environment or math block is treated as
+ * prose rather than swallowing the rest of the document. Verbatim/math contents
+ * are skipped to their literal `\end{...}`, so any `\begin{...}` shown as
+ * example code inside them is ignored.
+ */
+function maskLatexProse(text: string): boolean[] {
+	const n = text.length;
+	const mask = new Array<boolean>(n).fill(true);
+	const maskRange = (from: number, to: number) => {
+		for (let k = from; k < to; k++) {
+			mask[k] = false;
+		}
+	};
+	// Precompute which characters belong to a `%` line comment so token searches can
+	// ignore e.g. a literal \end{equation} written inside a comment.
+	const inComment = new Array<boolean>(n).fill(false);
+	for (let p = 0; p < n;) {
+		if (text[p] === '%' && (p === 0 || text[p - 1] !== '\\')) {
+			let q = p;
+			while (q < n && text[q] !== '\n') {
+				inComment[q] = true;
+				q++;
+			}
+			p = q;
+		} else {
+			p++;
+		}
+	}
+	// Like indexOf, but skips matches that fall inside a comment.
+	const indexOfOutsideComment = (token: string, from: number): number => {
+		let idx = text.indexOf(token, from);
+		while (idx !== -1 && inComment[idx]) {
+			idx = text.indexOf(token, idx + 1);
+		}
+		return idx;
+	};
+	// Finds the index just after the balanced {...} or [...] group starting at `start`,
+	// or -1 if it is never closed (so callers can avoid masking the rest of the file).
+	const findGroupEnd = (start: number): number => {
+		const open = text[start];
+		const close = open === '{' ? '}' : ']';
+		let depth = 0;
+		for (let k = start; k < n; k++) {
+			if (text[k] === open) {
+				depth++;
+			} else if (text[k] === close) {
+				depth--;
+				if (depth === 0) {
+					return k + 1;
+				}
+			}
+		}
+		return -1;
+	};
+
+	let i = 0;
+	while (i < n) {
+		const ch = text[i];
+		if (ch === '%' && (i === 0 || text[i - 1] !== '\\')) {
+			let j = i;
+			while (j < n && text[j] !== '\n') {
+				mask[j] = false;
+				j++;
+			}
+			i = j;
+			continue;
+		}
+		if (text.startsWith('\\begin{', i)) {
+			const braceEnd = text.indexOf('}', i + 7);
+			if (braceEnd !== -1) {
+				const env = text.substring(i + 7, braceEnd);
+				if (LATEX_SKIP_ENVIRONMENTS.has(env)) {
+					// Match the closing \end{env} accounting for nested same-name environments.
+					const beginTok = `\\begin{${env}}`;
+					const endTok = `\\end{${env}}`;
+					let depth = 1;
+					let search = braceEnd + 1;
+					let end = -1;
+					while (search < n) {
+						const nextBegin = indexOfOutsideComment(beginTok, search);
+						const nextEnd = indexOfOutsideComment(endTok, search);
+						if (nextEnd === -1) {
+							break;
+						}
+						if (nextBegin !== -1 && nextBegin < nextEnd) {
+							depth++;
+							search = nextBegin + beginTok.length;
+						} else {
+							depth--;
+							search = nextEnd + endTok.length;
+							if (depth === 0) {
+								end = search;
+								break;
+							}
+						}
+					}
+					if (end !== -1) {
+						maskRange(i, end);
+						i = end;
+						continue;
+					}
+				} else {
+					// Non-skip environment: mask just the \begin{env} token, keep its body as prose.
+					maskRange(i, braceEnd + 1);
+					i = braceEnd + 1;
+					continue;
+				}
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('\\end{', i)) {
+			const braceEnd = text.indexOf('}', i + 5);
+			if (braceEnd !== -1) {
+				maskRange(i, braceEnd + 1);
+				i = braceEnd + 1;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('\\[', i)) {
+			const closeIdx = indexOfOutsideComment('\\]', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('\\(', i)) {
+			const closeIdx = indexOfOutsideComment('\\)', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('$$', i)) {
+			const closeIdx = indexOfOutsideComment('$$', i + 2);
+			if (closeIdx !== -1) {
+				maskRange(i, closeIdx + 2);
+				i = closeIdx + 2;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (ch === '$' && (i === 0 || text[i - 1] !== '\\')) {
+			// Inline math: find the next unescaped closing dollar that is not in a comment.
+			let j = i + 1;
+			while (j < n && !(text[j] === '$' && text[j - 1] !== '\\' && !inComment[j])) {
+				j++;
+			}
+			if (j < n) {
+				maskRange(i, j + 1);
+				i = j + 1;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		if (ch === '\\') {
+			let k = i + 1;
+			while (k < n && /[a-zA-Z]/.test(text[k])) {
+				k++;
+			}
+			const name = text.substring(i + 1, k);
+			if (k < n && text[k] === '*') {
+				k++;
+			}
+			if (LATEX_STRUCTURAL_NAMES.has(name)) {
+				maskRange(i, k);
+				while (k < n && (text[k] === '{' || text[k] === '[')) {
+					const groupEnd = findGroupEnd(k);
+					if (groupEnd === -1) {
+						// Unclosed argument: stop here rather than masking the rest of the file.
+						break;
+					}
+					maskRange(k, groupEnd);
+					k = groupEnd;
+				}
+				i = k;
+				continue;
+			}
+			i++;
+			continue;
+		}
+		i++;
+	}
+	return mask;
+}
+
+/**
+ * Splits LaTeX source into prose snippets, skipping content that is not natural
+ * language: comments, math/verbatim environments, display math, and structural
+ * commands. Each contiguous run of prose on a line becomes its own snippet, so
+ * prose that shares a line with skipped markup is still checked.
+ */
+function splitLatex(text: string): TextSnippet[] {
+	const snippets: TextSnippet[] = [];
+	const mask = maskLatexProse(text);
+	const lines = text.split('\n');
+	let offset = 0;
+	for (let line = 0; line < lines.length; line++) {
+		const l = lines[line];
+		let col = 0;
+		while (col < l.length) {
+			if (!mask[offset + col]) {
+				col++;
+				continue;
+			}
+			const runStart = col;
+			while (col < l.length && mask[offset + col]) {
+				col++;
+			}
+			const runText = l.substring(runStart, col);
+			const trimmed = runText.trim();
+			if (trimmed.length > 0 && /[a-zA-Z]/.test(trimmed)) {
+				snippets.push({ text: runText, range: new vscode.Range(line, runStart, line, col) });
+			}
+		}
+		offset += l.length + 1;
+	}
+	return snippets;
+}
+
 type TextSnippetDiagnostic = {
 	correctedVersion?: string;
 	suggestedImprovements?: { explanation: string, improvedVersion: string }[];
@@ -70,6 +328,13 @@ class LMWritingTool {
 		this.corrections = new Map();
 		this.taskScheduler = new TaskScheduler(1);
 		//this.lmCallback = lmCallback;
+	}
+
+	private getSplitter(document: vscode.TextDocument): (text: string) => TextSnippet[] {
+		if (document.languageId === 'latex') {
+			return splitLatex;
+		}
+		return this.textSplitterFunction;
 	}
 
 	private getProofreadingPrompt(text: string): string {
@@ -167,7 +432,7 @@ class LMWritingTool {
 
 	getCachedSnippetDiagnosticsAtLocation(document: vscode.TextDocument, location: vscode.Position): LocatedTextSnippetDiagnostic[] {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetsAtLocation = snippets.filter(s => s.range.contains(location));
 
 		return snippetsAtLocation.map(s => {
@@ -182,7 +447,7 @@ class LMWritingTool {
 	}
 	sendLLMRequestsForDocument(document: vscode.TextDocument) {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		const currentlyActiveDocument = vscode.window.activeTextEditor?.document.uri.toString();
 		for (const [id, t] of this.taskScheduler.pendingTasks) {
@@ -237,7 +502,7 @@ class LMWritingTool {
 
 	checkDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
 		const text = document.getText();
-		const snippets = splitTextByLine(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		//await Promise.all(snippetTexts.map((ts) => this.getSnippetDiagnostics(ts)));
 		const newCorrections: LocatedCorrection[] = [];

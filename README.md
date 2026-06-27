@@ -9,6 +9,7 @@ This extension bridges the gap by leveraging large language models (LLMs). It ch
 ![LLM-based grammar checking](resources/demo.gif)  
 
 - **LLM-powered grammar checking** in American English  
+- **LaTeX-aware checking** that proofreads prose while skipping comments, math, and verbatim/code environments  
 - **Inline corrections** via quick fixes  
 - **Choice of models**: Use a local `llama3.2:3b` model via [Ollama](https://ollama.com/) or `gpt-40-mini` through the [VSCode LM API](https://code.visualstudio.com/api/extension-guides/language-model)  
 - **Rewrite suggestions** to improve clarity  
@@ -145,6 +146,17 @@ Set `lmWritingTool.ollama.model` to `llama3.1:8b` for better quality (but slower
 3. **Detected errors are highlighted**, and users can apply quick fixes with a click.  
 4. **Responses are cached** to minimize repeated API calls.  
 5. Every **5 seconds,** the extension checks for text changes and reprocesses modified sections.  
+
+## LaTeX support
+
+When editing a LaTeX document (language mode `latex`), the extension automatically uses a LaTeX-aware splitter that only proofreads natural-language prose. It skips:
+
+- Line comments (`% ...`)
+- Math environments (e.g. `equation`, `align`, `displaymath`), display math (`\[ ... \]`, `$$ ... $$`), and inline math (`$ ... $`, `\( ... \)`)
+- Verbatim/code environments (e.g. `verbatim`, `lstlisting`, `minted`) and `tikzpicture`
+- Structural, prose-free commands (e.g. `\begin{...}`, `\usepackage{...}`, `\label{...}`, `\cite{...}`)
+
+This prevents the model from trying to "correct" formulas, code, or markup, and keeps suggestions focused on your writing.
 
 ## Roadmap  
 

@@ -34,8 +34,18 @@ const LATEX_SKIP_ENVIRONMENTS = new Set([
 	'lstlisting', 'minted', 'tikzpicture', 'pgfpicture',
 ]);
 
-// Structural LaTeX commands that occupy a whole line and contain no prose to check.
-const LATEX_STRUCTURAL_COMMAND = /^\\(begin|end|usepackage|documentclass|input|include|includegraphics|label|ref|eqref|pageref|cite|nocite|bibliography|bibliographystyle|addbibresource|printbibliography|newcommand|renewcommand|providecommand|def|hline|toprule|midrule|bottomrule|centering|raggedright|noindent|clearpage|cleardoublepage|newpage|pagebreak|vspace\*?|hspace\*?|tableofcontents|listoffigures|listoftables|maketitle|appendix|hrule|bigskip|medskip|smallskip)\b/;
+// Structural LaTeX commands that contain no prose to check. Their command token and
+// any immediately following [...] / {...} arguments are masked, so prose that shares a
+// line with them is still proofread (\begin and \end are handled separately).
+const LATEX_STRUCTURAL_NAMES = new Set([
+	'usepackage', 'documentclass', 'input', 'include', 'includegraphics', 'label',
+	'ref', 'eqref', 'pageref', 'cite', 'nocite', 'bibliography', 'bibliographystyle',
+	'addbibresource', 'printbibliography', 'newcommand', 'renewcommand', 'providecommand',
+	'def', 'hline', 'toprule', 'midrule', 'bottomrule', 'centering', 'raggedright',
+	'noindent', 'clearpage', 'cleardoublepage', 'newpage', 'pagebreak', 'vspace', 'hspace',
+	'tableofcontents', 'listoffigures', 'listoftables', 'maketitle', 'appendix', 'hrule',
+	'bigskip', 'medskip', 'smallskip',
+]);
 
 /**
  * Builds a boolean mask over `text` where `true` marks characters that are
@@ -55,6 +65,26 @@ function maskLatexProse(text: string): boolean[] {
 		for (let k = from; k < to; k++) {
 			mask[k] = false;
 		}
+	};
+	// Masks a balanced {...} or [...] group starting at `start`; returns the index after it.
+	const maskBalancedGroup = (start: number): number => {
+		const open = text[start];
+		const close = open === '{' ? '}' : ']';
+		let depth = 0;
+		let k = start;
+		for (; k < n; k++) {
+			mask[k] = false;
+			if (text[k] === open) {
+				depth++;
+			} else if (text[k] === close) {
+				depth--;
+				if (depth === 0) {
+					k++;
+					break;
+				}
+			}
+		}
+		return k;
 	};
 
 	let i = 0;
@@ -103,7 +133,22 @@ function maskLatexProse(text: string): boolean[] {
 						i = end;
 						continue;
 					}
+				} else {
+					// Non-skip environment: mask just the \begin{env} token, keep its body as prose.
+					maskRange(i, braceEnd + 1);
+					i = braceEnd + 1;
+					continue;
 				}
+			}
+			i++;
+			continue;
+		}
+		if (text.startsWith('\\end{', i)) {
+			const braceEnd = text.indexOf('}', i + 5);
+			if (braceEnd !== -1) {
+				maskRange(i, braceEnd + 1);
+				i = braceEnd + 1;
+				continue;
 			}
 			i++;
 			continue;
@@ -152,6 +197,26 @@ function maskLatexProse(text: string): boolean[] {
 			i++;
 			continue;
 		}
+		if (ch === '\\') {
+			let k = i + 1;
+			while (k < n && /[a-zA-Z]/.test(text[k])) {
+				k++;
+			}
+			const name = text.substring(i + 1, k);
+			if (k < n && text[k] === '*') {
+				k++;
+			}
+			if (LATEX_STRUCTURAL_NAMES.has(name)) {
+				maskRange(i, k);
+				while (k < n && (text[k] === '{' || text[k] === '[')) {
+					k = maskBalancedGroup(k);
+				}
+				i = k;
+				continue;
+			}
+			i++;
+			continue;
+		}
 		i++;
 	}
 	return mask;
@@ -182,7 +247,7 @@ function splitLatex(text: string): TextSnippet[] {
 			}
 			const runText = l.substring(runStart, col);
 			const trimmed = runText.trim();
-			if (trimmed.length > 0 && /[a-zA-Z]/.test(trimmed) && !LATEX_STRUCTURAL_COMMAND.test(trimmed)) {
+			if (trimmed.length > 0 && /[a-zA-Z]/.test(trimmed)) {
 				snippets.push({ text: runText, range: new vscode.Range(line, runStart, line, col) });
 			}
 		}

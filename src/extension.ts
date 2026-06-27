@@ -66,6 +66,29 @@ function maskLatexProse(text: string): boolean[] {
 			mask[k] = false;
 		}
 	};
+	// Precompute which characters belong to a `%` line comment so token searches can
+	// ignore e.g. a literal \end{equation} written inside a comment.
+	const inComment = new Array<boolean>(n).fill(false);
+	for (let p = 0; p < n;) {
+		if (text[p] === '%' && (p === 0 || text[p - 1] !== '\\')) {
+			let q = p;
+			while (q < n && text[q] !== '\n') {
+				inComment[q] = true;
+				q++;
+			}
+			p = q;
+		} else {
+			p++;
+		}
+	}
+	// Like indexOf, but skips matches that fall inside a comment.
+	const indexOfOutsideComment = (token: string, from: number): number => {
+		let idx = text.indexOf(token, from);
+		while (idx !== -1 && inComment[idx]) {
+			idx = text.indexOf(token, idx + 1);
+		}
+		return idx;
+	};
 	// Finds the index just after the balanced {...} or [...] group starting at `start`,
 	// or -1 if it is never closed (so callers can avoid masking the rest of the file).
 	const findGroupEnd = (start: number): number => {
@@ -109,8 +132,8 @@ function maskLatexProse(text: string): boolean[] {
 					let search = braceEnd + 1;
 					let end = -1;
 					while (search < n) {
-						const nextBegin = text.indexOf(beginTok, search);
-						const nextEnd = text.indexOf(endTok, search);
+						const nextBegin = indexOfOutsideComment(beginTok, search);
+						const nextEnd = indexOfOutsideComment(endTok, search);
 						if (nextEnd === -1) {
 							break;
 						}
@@ -152,7 +175,7 @@ function maskLatexProse(text: string): boolean[] {
 			continue;
 		}
 		if (text.startsWith('\\[', i)) {
-			const closeIdx = text.indexOf('\\]', i + 2);
+			const closeIdx = indexOfOutsideComment('\\]', i + 2);
 			if (closeIdx !== -1) {
 				maskRange(i, closeIdx + 2);
 				i = closeIdx + 2;
@@ -162,7 +185,7 @@ function maskLatexProse(text: string): boolean[] {
 			continue;
 		}
 		if (text.startsWith('\\(', i)) {
-			const closeIdx = text.indexOf('\\)', i + 2);
+			const closeIdx = indexOfOutsideComment('\\)', i + 2);
 			if (closeIdx !== -1) {
 				maskRange(i, closeIdx + 2);
 				i = closeIdx + 2;
@@ -172,7 +195,7 @@ function maskLatexProse(text: string): boolean[] {
 			continue;
 		}
 		if (text.startsWith('$$', i)) {
-			const closeIdx = text.indexOf('$$', i + 2);
+			const closeIdx = indexOfOutsideComment('$$', i + 2);
 			if (closeIdx !== -1) {
 				maskRange(i, closeIdx + 2);
 				i = closeIdx + 2;
@@ -182,9 +205,9 @@ function maskLatexProse(text: string): boolean[] {
 			continue;
 		}
 		if (ch === '$' && (i === 0 || text[i - 1] !== '\\')) {
-			// Inline math: find the next unescaped closing dollar.
+			// Inline math: find the next unescaped closing dollar that is not in a comment.
 			let j = i + 1;
-			while (j < n && !(text[j] === '$' && text[j - 1] !== '\\')) {
+			while (j < n && !(text[j] === '$' && text[j - 1] !== '\\' && !inComment[j])) {
 				j++;
 			}
 			if (j < n) {

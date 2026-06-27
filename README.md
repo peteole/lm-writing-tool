@@ -88,6 +88,16 @@ The extension now supports configurable system prompts and Ollama model selectio
   *Default*: `llama3.2:3b`  
   *Examples*: `llama3.2:1b`, `llama3.1:8b`, `codellama:7b`, `mistral:7b`
 
+**Scope Configuration:**
+
+- **`lmWritingTool.checkOnlyDelimited`**  
+  When enabled, only the text enclosed by the configured delimiters is checked (for example, only the text inside quotation marks). Useful when you want to proofread quoted prose or string literals while ignoring the rest of the document.  
+  *Default*: `false`
+
+- **`lmWritingTool.delimiters`**  
+  The delimiters that mark the text to check when `checkOnlyDelimited` is enabled. Use a single character for matching pairs (e.g. `"` matches `"..."`), or two characters for distinct open/close delimiters (e.g. `“”` or `«»`).  
+  *Default*: `["\""]`
+
 ### Placeholders
 
 When customizing prompts, use these placeholders:

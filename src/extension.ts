@@ -25,6 +25,86 @@ function splitTextByLine(text: string): TextSnippet[] {
 	return snippets;
 }
 
+type DelimiterPair = { open: string; close: string };
+
+function parseDelimiters(raw: string[]): DelimiterPair[] {
+	return raw
+		.filter((d): d is string => typeof d === 'string' && d.length > 0)
+		.map(d => d.length >= 2 ? { open: d[0], close: d[d.length - 1] } : { open: d, close: d });
+}
+
+/**
+ * Maps a position that is `relLine`/`relCol` into a snippet back to an absolute
+ * document position. On the first snippet line the column is relative to the
+ * snippet start; on subsequent lines it is an absolute column.
+ */
+function offsetPosition(base: vscode.Position, relLine: number, relCol: number): vscode.Position {
+	if (relLine === 0) {
+		return new vscode.Position(base.line, base.character + relCol);
+	}
+	return new vscode.Position(base.line + relLine, relCol);
+}
+
+/**
+ * Returns true if the character at `pos` is escaped, i.e. preceded by an odd
+ * number of consecutive backslashes.
+ */
+function isEscaped(text: string, pos: number): boolean {
+	let backslashes = 0;
+	let k = pos - 1;
+	while (k >= 0 && text[k] === '\\') {
+		backslashes++;
+		k--;
+	}
+	return backslashes % 2 === 1;
+}
+
+/**
+ * Finds the next occurrence of `needle` at or after `from` that is not escaped
+ * (not preceded by an odd number of backslashes).
+ */
+function indexOfUnescaped(text: string, needle: string, from: number): number {
+	let idx = text.indexOf(needle, from);
+	while (idx > 0 && isEscaped(text, idx)) {
+		idx = text.indexOf(needle, idx + needle.length);
+	}
+	return idx;
+}
+
+/**
+ * Splits text into the regions enclosed by the configured delimiter pairs
+ * (e.g. quotation marks). Only the content between delimiters is returned, so
+ * grammar checking is limited to those regions.
+ */
+function splitTextByDelimiters(text: string, pairs: DelimiterPair[]): TextSnippet[] {
+	const snippets: TextSnippet[] = [];
+	let i = 0;
+	while (i < text.length) {
+		const matched = pairs.find(p => text.startsWith(p.open, i));
+		if (!matched || isEscaped(text, i)) {
+			i++;
+			continue;
+		}
+		const contentStart = i + matched.open.length;
+		const closeIdx = indexOfUnescaped(text, matched.close, contentStart);
+		if (closeIdx === -1) {
+			// No matching close delimiter: skip past this opener and keep scanning
+			// so later well-formed regions are still extracted.
+			i = contentStart;
+			continue;
+		}
+		const content = text.substring(contentStart, closeIdx);
+		if (content.trim().length > 0) {
+			const start = getLineCol(text, contentStart);
+			const end = getLineCol(text, closeIdx);
+			const range = new vscode.Range(start.line, start.col, end.line, end.col);
+			snippets.push({ text: content, range });
+		}
+		i = closeIdx + matched.close.length;
+	}
+	return snippets;
+}
+
 type TextSnippetDiagnostic = {
 	correctedVersion?: string;
 	suggestedImprovements?: { explanation: string, improvedVersion: string }[];
@@ -70,6 +150,18 @@ class LMWritingTool {
 		this.corrections = new Map();
 		this.taskScheduler = new TaskScheduler(1);
 		//this.lmCallback = lmCallback;
+	}
+
+	private getSplitter(): (text: string) => TextSnippet[] {
+		const config = vscode.workspace.getConfiguration('lmWritingTool');
+		if (config.get<boolean>('checkOnlyDelimited')) {
+			const raw = config.get<string[]>('delimiters');
+			const pairs = parseDelimiters(Array.isArray(raw) ? raw : ['"']);
+			// When the option is on, only delimited regions are checked. If no valid
+			// delimiters are configured, nothing is checked (rather than whole lines).
+			return (text: string) => splitTextByDelimiters(text, pairs);
+		}
+		return this.textSplitterFunction;
 	}
 
 	private getProofreadingPrompt(text: string): string {
@@ -167,7 +259,7 @@ class LMWritingTool {
 
 	getCachedSnippetDiagnosticsAtLocation(document: vscode.TextDocument, location: vscode.Position): LocatedTextSnippetDiagnostic[] {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter()(text);
 		const snippetsAtLocation = snippets.filter(s => s.range.contains(location));
 
 		return snippetsAtLocation.map(s => {
@@ -182,7 +274,7 @@ class LMWritingTool {
 	}
 	sendLLMRequestsForDocument(document: vscode.TextDocument) {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter()(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		const currentlyActiveDocument = vscode.window.activeTextEditor?.document.uri.toString();
 		for (const [id, t] of this.taskScheduler.pendingTasks) {
@@ -237,7 +329,7 @@ class LMWritingTool {
 
 	checkDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
 		const text = document.getText();
-		const snippets = splitTextByLine(text);
+		const snippets = this.getSplitter()(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		//await Promise.all(snippetTexts.map((ts) => this.getSnippetDiagnostics(ts)));
 		const newCorrections: LocatedCorrection[] = [];
@@ -249,8 +341,8 @@ class LMWritingTool {
 				for (const correction of corrections) {
 					const { line: startLineRelative, col: startColRelative } = getLineCol(snippet.text, correction.start);
 					const { line: endLineRelative, col: endColRelative } = getLineCol(snippet.text, correction.end);
-					const start = snippet.range.start.translate(startLineRelative, startColRelative);
-					const end = snippet.range.start.translate(endLineRelative, endColRelative);
+					const start = offsetPosition(snippet.range.start, startLineRelative, startColRelative);
+					const end = offsetPosition(snippet.range.start, endLineRelative, endColRelative);
 					const range = new vscode.Range(start, end);
 					const text = correction.toInsert === "" ? "Remove" : `Change to: ${correction.toInsert}`;
 					const diagnostic = new vscode.Diagnostic(range, text, vscode.DiagnosticSeverity.Information);

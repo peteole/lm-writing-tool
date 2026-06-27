@@ -404,6 +404,18 @@ export async function activate(context: vscode.ExtensionContext) {
 		return _lmwt;
 	}
 
+	// Drop cached results, pending requests, and shown squiggles so checking restarts fresh
+	// (e.g. after the language changes). The running text-check interval re-requests as needed.
+	function invalidateDiagnostics() {
+		if (!_lmwt) {
+			return;
+		}
+		_lmwt.taskScheduler.abortAll();
+		_lmwt.diagnosticsCache.clear();
+		_lmwt.corrections.clear();
+		_lmwt.dc.clear();
+	}
+
 	async function selectModel() {
 		const models = await vscode.lm.selectChatModels({
 			vendor: 'copilot',
@@ -592,7 +604,9 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 				language = custom.trim();
 			}
-			const cfg = vscode.workspace.getConfiguration('lmWritingTool');
+			// Scope the config to the active document so multi-root workspaces update the right folder.
+			const resource = vscode.window.activeTextEditor?.document.uri;
+			const cfg = vscode.workspace.getConfiguration('lmWritingTool', resource);
 			// Write to the scope that is currently in effect so the change is actually applied.
 			const inspected = cfg.inspect<string>('language');
 			let target = vscode.ConfigurationTarget.Global;
@@ -602,9 +616,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				target = vscode.ConfigurationTarget.Workspace;
 			}
 			await cfg.update('language', language, target);
-			if (_lmwt) {
-				_lmwt.diagnosticsCache.clear();
-			}
+			invalidateDiagnostics();
 			vscode.window.showInformationMessage(`LLM Writing Tool language set to: ${language}`);
 		})
 	);
@@ -638,10 +650,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			// Reset language to default
 			await vscode.workspace.getConfiguration('lmWritingTool').update('language', undefined, vscode.ConfigurationTarget.Global);
 
-			// Clear cached diagnostics so they are recomputed with the restored language.
-			if (_lmwt) {
-				_lmwt.diagnosticsCache.clear();
-			}
+			// Discard cached results and pending work so they are recomputed with the restored language.
+			invalidateDiagnostics();
 
 			vscode.window.showInformationMessage('All extension settings have been reset to their default values');
 		})

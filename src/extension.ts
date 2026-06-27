@@ -25,6 +25,45 @@ function splitTextByLine(text: string): TextSnippet[] {
 	return snippets;
 }
 
+type DelimiterPair = { open: string; close: string };
+
+function parseDelimiters(raw: string[]): DelimiterPair[] {
+	return raw
+		.filter(d => d.length > 0)
+		.map(d => d.length >= 2 ? { open: d[0], close: d[d.length - 1] } : { open: d, close: d });
+}
+
+/**
+ * Splits text into the regions enclosed by the configured delimiter pairs
+ * (e.g. quotation marks). Only the content between delimiters is returned, so
+ * grammar checking is limited to those regions.
+ */
+function splitTextByDelimiters(text: string, pairs: DelimiterPair[]): TextSnippet[] {
+	const snippets: TextSnippet[] = [];
+	let i = 0;
+	while (i < text.length) {
+		const matched = pairs.find(p => text.startsWith(p.open, i));
+		if (!matched) {
+			i++;
+			continue;
+		}
+		const contentStart = i + matched.open.length;
+		const closeIdx = text.indexOf(matched.close, contentStart);
+		if (closeIdx === -1) {
+			break;
+		}
+		const content = text.substring(contentStart, closeIdx);
+		if (content.trim().length > 0) {
+			const start = getLineCol(text, contentStart);
+			const end = getLineCol(text, closeIdx);
+			const range = new vscode.Range(start.line, start.col, end.line, end.col);
+			snippets.push({ text: content, range });
+		}
+		i = closeIdx + matched.close.length;
+	}
+	return snippets;
+}
+
 type TextSnippetDiagnostic = {
 	correctedVersion?: string;
 	suggestedImprovements?: { explanation: string, improvedVersion: string }[];
@@ -70,6 +109,18 @@ class LMWritingTool {
 		this.corrections = new Map();
 		this.taskScheduler = new TaskScheduler(1);
 		//this.lmCallback = lmCallback;
+	}
+
+	private getSplitter(): (text: string) => TextSnippet[] {
+		const config = vscode.workspace.getConfiguration('lmWritingTool');
+		if (config.get<boolean>('checkOnlyDelimited')) {
+			const raw = config.get<string[]>('delimiters') || ['"'];
+			const pairs = parseDelimiters(raw);
+			if (pairs.length > 0) {
+				return (text: string) => splitTextByDelimiters(text, pairs);
+			}
+		}
+		return this.textSplitterFunction;
 	}
 
 	private getProofreadingPrompt(text: string): string {
@@ -167,7 +218,7 @@ class LMWritingTool {
 
 	getCachedSnippetDiagnosticsAtLocation(document: vscode.TextDocument, location: vscode.Position): LocatedTextSnippetDiagnostic[] {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter()(text);
 		const snippetsAtLocation = snippets.filter(s => s.range.contains(location));
 
 		return snippetsAtLocation.map(s => {
@@ -182,7 +233,7 @@ class LMWritingTool {
 	}
 	sendLLMRequestsForDocument(document: vscode.TextDocument) {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter()(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		const currentlyActiveDocument = vscode.window.activeTextEditor?.document.uri.toString();
 		for (const [id, t] of this.taskScheduler.pendingTasks) {
@@ -237,7 +288,7 @@ class LMWritingTool {
 
 	checkDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
 		const text = document.getText();
-		const snippets = splitTextByLine(text);
+		const snippets = this.getSplitter()(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		//await Promise.all(snippetTexts.map((ts) => this.getSnippetDiagnostics(ts)));
 		const newCorrections: LocatedCorrection[] = [];

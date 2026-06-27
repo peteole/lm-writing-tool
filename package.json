@@ -76,6 +76,21 @@
           "type": "string",
           "default": "llama3.2:3b",
           "description": "The Ollama model to use for text processing. Make sure the model is available on your local Ollama server."
+        },
+        "lmWritingTool.checkOnlyDelimited": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, only check text enclosed by the delimiters configured in 'lmWritingTool.delimiters' (e.g. text inside quotation marks). Everything outside the delimiters is left untouched."
+        },
+        "lmWritingTool.delimiters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "\""
+          ],
+          "description": "Delimiters that mark the text to check when 'lmWritingTool.checkOnlyDelimited' is enabled. Use a single character for matching pairs (e.g. \" matches \"...\"), or two characters for distinct open/close delimiters (e.g. “” or «»)."
         }
       }
     }

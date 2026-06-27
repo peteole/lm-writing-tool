@@ -76,6 +76,16 @@
           "type": "string",
           "default": "llama3.2:3b",
           "description": "The Ollama model to use for text processing. Make sure the model is available on your local Ollama server."
+        },
+        "lmWritingTool.lmStudio.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:1234/v1",
+          "description": "Base URL of the LM Studio OpenAI-compatible server. Start the server from the LM Studio 'Developer' tab."
+        },
+        "lmWritingTool.lmStudio.model": {
+          "type": "string",
+          "default": "",
+          "description": "The LM Studio model to use for text processing. Leave empty to use the first model currently loaded in LM Studio."
         }
       }
     }

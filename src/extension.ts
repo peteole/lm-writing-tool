@@ -6,6 +6,7 @@ import * as vscode from 'vscode';
 import * as Diff from 'diff';
 import { getLineCol, calculateCorrections } from './correctionDiffing';
 import { OllamaLLM } from './ollamaIntegration';
+import { LMStudioLLM } from './lmStudioIntegration';
 import { Task, TaskScheduler } from './taskScheduler';
 
 type TextSnippet = {
@@ -408,6 +409,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (ollamaLLM) {
 			models.push(ollamaLLM);
 		}
+		const lmStudioLLM = await LMStudioLLM.create();
+		if (lmStudioLLM) {
+			models.push(lmStudioLLM);
+		}
 		if (models.length === 0) {
 			throw new Error("No models found.");
 		}
@@ -568,6 +573,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('lm-writing-tool.resetSettings', async () => {
 			const promptsConfig = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 			const ollamaConfig = vscode.workspace.getConfiguration('lmWritingTool.ollama');
+			const lmStudioConfig = vscode.workspace.getConfiguration('lmWritingTool.lmStudio');
 
 			// Reset all prompts to their default values
 			await promptsConfig.update('proofreading', undefined, vscode.ConfigurationTarget.Global);
@@ -576,6 +582,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// Reset Ollama model to default
 			await ollamaConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
+
+			// Reset LM Studio settings to defaults
+			await lmStudioConfig.update('baseUrl', undefined, vscode.ConfigurationTarget.Global);
+			await lmStudioConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
 
 			vscode.window.showInformationMessage('All extension settings have been reset to their default values');
 		})

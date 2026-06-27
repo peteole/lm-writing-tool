@@ -46,12 +46,26 @@ function offsetPosition(base: vscode.Position, relLine: number, relCol: number):
 }
 
 /**
+ * Returns true if the character at `pos` is escaped, i.e. preceded by an odd
+ * number of consecutive backslashes.
+ */
+function isEscaped(text: string, pos: number): boolean {
+	let backslashes = 0;
+	let k = pos - 1;
+	while (k >= 0 && text[k] === '\\') {
+		backslashes++;
+		k--;
+	}
+	return backslashes % 2 === 1;
+}
+
+/**
  * Finds the next occurrence of `needle` at or after `from` that is not escaped
- * by a preceding backslash.
+ * (not preceded by an odd number of backslashes).
  */
 function indexOfUnescaped(text: string, needle: string, from: number): number {
 	let idx = text.indexOf(needle, from);
-	while (idx > 0 && text[idx - 1] === '\\') {
+	while (idx > 0 && isEscaped(text, idx)) {
 		idx = text.indexOf(needle, idx + needle.length);
 	}
 	return idx;
@@ -67,7 +81,7 @@ function splitTextByDelimiters(text: string, pairs: DelimiterPair[]): TextSnippe
 	let i = 0;
 	while (i < text.length) {
 		const matched = pairs.find(p => text.startsWith(p.open, i));
-		if (!matched) {
+		if (!matched || isEscaped(text, i)) {
 			i++;
 			continue;
 		}

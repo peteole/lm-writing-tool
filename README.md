@@ -138,6 +138,46 @@ Set `lmWritingTool.ollama.model` to `llama3.1:8b` for better quality (but slower
 1. Install the extension from the [VSCode Marketplace](https://marketplace.visualstudio.com/items?itemName=OlePetersen.lm-writing-tool).  
 2. Install [Ollama](https://ollama.com/) and pull `llama3.2:3b` for local grammar checking, or subscribe to GitHub Copilot for online LLM access.  
 
+### Prerequisites
+
+To use the **local model**, you need a working [Ollama](https://ollama.com/) installation. If you have not run local LLMs before, the steps below walk you through it. If you only plan to use **GitHub Copilot**, you can skip this section and just sign in to Copilot in VS Code.
+
+### Setting up Ollama for local grammar checking
+
+1. **Install Ollama** for your operating system from [ollama.com/download](https://ollama.com/download).
+2. **Start the Ollama server.** On macOS and Windows the desktop app starts it automatically. On Linux (or any headless setup) start it manually with:
+
+```bash
+ollama serve
+```
+
+   By default the server listens on `http://localhost:11434`. The extension talks to this address, so it must be running whenever you use the local model.
+3. **Pull the default model** (the extension also offers to do this for you on first run):
+
+```bash
+ollama pull llama3.2:3b
+```
+
+4. **Verify the installation is working.** Confirm the server responds and the model is available:
+
+```bash
+# Should list llama3.2:3b among the installed models
+ollama list
+
+# Should return a JSON response listing the running server's models
+curl http://localhost:11434/api/tags
+```
+
+   If `ollama list` shows your model and the `curl` command returns JSON, you are ready to go. You can also do a quick end-to-end test with `ollama run llama3.2:3b "Say hello"`.
+
+#### Troubleshooting
+
+- **"Could not reach ollama" / connection refused:** the server is not running. Start it with `ollama serve` (Linux/headless) or by launching the Ollama desktop app.
+- **"model not found":** pull the model with `ollama pull llama3.2:3b`, or change `lmWritingTool.ollama.model` in settings to a model you have installed.
+- **Slow responses or out-of-memory errors:** switch to a smaller model such as `llama3.2:1b` via the `lmWritingTool.ollama.model` setting. Larger models like `llama3.1:8b` need more RAM/VRAM.
+
+> **Tip:** Running local LLMs requires a reasonably capable machine (ideally with a GPU). If your hardware struggles with local models, GitHub Copilot is a lighter-weight alternative that runs the model remotely.
+
 ## How It Works  
 
 1. The extension **splits the text into sections** and sends them to the selected LLM for proofreading.  

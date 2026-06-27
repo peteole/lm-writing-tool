@@ -25,6 +25,93 @@ function splitTextByLine(text: string): TextSnippet[] {
 	return snippets;
 }
 
+// LaTeX environments whose contents are not natural-language prose and should not be proofread.
+const LATEX_SKIP_ENVIRONMENTS = new Set([
+	'equation', 'equation*', 'align', 'align*', 'alignat', 'alignat*',
+	'gather', 'gather*', 'multline', 'multline*', 'displaymath', 'math',
+	'eqnarray', 'eqnarray*', 'array', 'matrix', 'pmatrix', 'bmatrix',
+	'vmatrix', 'Vmatrix', 'smallmatrix', 'cases', 'verbatim', 'Verbatim',
+	'lstlisting', 'minted', 'tikzpicture', 'pgfpicture',
+]);
+
+// Structural LaTeX commands that occupy a whole line and contain no prose to check.
+const LATEX_STRUCTURAL_COMMAND = /^\\(begin|end|usepackage|documentclass|input|include|includegraphics|label|ref|eqref|pageref|cite|nocite|bibliography|bibliographystyle|addbibresource|printbibliography|newcommand|renewcommand|providecommand|def|hline|toprule|midrule|bottomrule|centering|raggedright|noindent|clearpage|cleardoublepage|newpage|pagebreak|vspace\*?|hspace\*?|tableofcontents|listoffigures|listoftables|maketitle|appendix|hrule|bigskip|medskip|smallskip)\b/;
+
+/**
+ * Removes a trailing LaTeX line comment (the first unescaped `%` to end of line).
+ */
+function stripLatexComment(line: string): string {
+	for (let i = 0; i < line.length; i++) {
+		if (line[i] === '%' && (i === 0 || line[i - 1] !== '\\')) {
+			return line.substring(0, i);
+		}
+	}
+	return line;
+}
+
+/**
+ * Splits LaTeX source into line snippets, skipping content that is not natural
+ * language: comments, math/verbatim environments, display math, and structural
+ * commands. This keeps the proofreader focused on prose and avoids mangling code.
+ */
+function splitLatex(text: string): TextSnippet[] {
+	const snippets: TextSnippet[] = [];
+	const lines = text.split('\n');
+	let skipDepth = 0;
+	let inDisplayMath = false;
+	const beginEndRe = /\\(begin|end)\{([^}]*)\}/g;
+
+	for (let line = 0; line < lines.length; line++) {
+		const skippingAtLineStart = skipDepth > 0 || inDisplayMath;
+		const content = stripLatexComment(lines[line]);
+
+		beginEndRe.lastIndex = 0;
+		let match: RegExpExecArray | null;
+		while ((match = beginEndRe.exec(content)) !== null) {
+			const [, kind, env] = match;
+			if (!LATEX_SKIP_ENVIRONMENTS.has(env)) {
+				continue;
+			}
+			if (kind === 'begin') {
+				skipDepth++;
+			} else {
+				skipDepth = Math.max(0, skipDepth - 1);
+			}
+		}
+
+		const trimmed = content.trim();
+		const opensDisplayMath = (content.split('\\[').length - 1) > (content.split('\\]').length - 1)
+			|| ((content.split('$$').length - 1) % 2 === 1);
+		const closesDisplayMath = (content.split('\\]').length - 1) > (content.split('\\[').length - 1)
+			|| ((content.split('$$').length - 1) % 2 === 1);
+		if (!inDisplayMath && opensDisplayMath) {
+			inDisplayMath = true;
+		} else if (inDisplayMath && closesDisplayMath) {
+			inDisplayMath = false;
+		}
+
+		if (skippingAtLineStart) {
+			continue;
+		}
+		if (trimmed.length === 0) {
+			continue;
+		}
+		if (trimmed.startsWith('%')) {
+			continue;
+		}
+		if (LATEX_STRUCTURAL_COMMAND.test(trimmed)) {
+			continue;
+		}
+		if (!/[a-zA-Z]/.test(trimmed)) {
+			continue;
+		}
+
+		const range = new vscode.Range(line, 0, line, content.length);
+		snippets.push({ text: content, range });
+	}
+	return snippets;
+}
+
 type TextSnippetDiagnostic = {
 	correctedVersion?: string;
 	suggestedImprovements?: { explanation: string, improvedVersion: string }[];
@@ -70,6 +157,13 @@ class LMWritingTool {
 		this.corrections = new Map();
 		this.taskScheduler = new TaskScheduler(1);
 		//this.lmCallback = lmCallback;
+	}
+
+	private getSplitter(document: vscode.TextDocument): (text: string) => TextSnippet[] {
+		if (document.languageId === 'latex') {
+			return splitLatex;
+		}
+		return this.textSplitterFunction;
 	}
 
 	private getProofreadingPrompt(text: string): string {
@@ -167,7 +261,7 @@ class LMWritingTool {
 
 	getCachedSnippetDiagnosticsAtLocation(document: vscode.TextDocument, location: vscode.Position): LocatedTextSnippetDiagnostic[] {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetsAtLocation = snippets.filter(s => s.range.contains(location));
 
 		return snippetsAtLocation.map(s => {
@@ -182,7 +276,7 @@ class LMWritingTool {
 	}
 	sendLLMRequestsForDocument(document: vscode.TextDocument) {
 		const text = document.getText();
-		const snippets = this.textSplitterFunction(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		const currentlyActiveDocument = vscode.window.activeTextEditor?.document.uri.toString();
 		for (const [id, t] of this.taskScheduler.pendingTasks) {
@@ -237,7 +331,7 @@ class LMWritingTool {
 
 	checkDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
 		const text = document.getText();
-		const snippets = splitTextByLine(text);
+		const snippets = this.getSplitter(document)(text);
 		const snippetTexts = [...new Set(snippets.map(s => s.text))];
 		//await Promise.all(snippetTexts.map((ts) => this.getSnippetDiagnostics(ts)));
 		const newCorrections: LocatedCorrection[] = [];

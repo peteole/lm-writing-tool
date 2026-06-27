@@ -89,6 +89,11 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
             const abortController = new AbortController();
             token?.onCancellationRequested(() => abortController.abort());
 
+            const isAbort = (error: unknown) =>
+                abortController.signal.aborted || (error instanceof Error && error.name === 'AbortError');
+
+            async function* empty(): AsyncGenerator<never> { /* nothing to yield */ }
+
             let response: Response;
             try {
                 response = await fetch(`${baseUrl}/chat/completions`, {
@@ -105,6 +110,11 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
                     signal: abortController.signal,
                 });
             } catch (error) {
+                if (isAbort(error)) {
+                    // Cancellation is expected (e.g. the document changed); end quietly.
+                    resolve({ text: empty(), stream: empty() });
+                    return;
+                }
                 reject(`Could not reach LM Studio: ${error}\n                    Is the LM Studio server running with a model loaded?\n                    Start it from the "Developer" tab in LM Studio.`);
                 return;
             }
@@ -142,20 +152,27 @@ export class LMStudioLLM implements vscode.LanguageModelChat {
                 const reader = body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        break;
-                    }
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-                    for (const line of lines) {
-                        const content = parseLine(line);
-                        if (content) {
-                            yield content;
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            break;
+                        }
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        for (const line of lines) {
+                            const content = parseLine(line);
+                            if (content) {
+                                yield content;
+                            }
                         }
                     }
+                } catch (error) {
+                    if (isAbort(error)) {
+                        return;
+                    }
+                    throw error;
                 }
                 // Flush any final line that arrived without a trailing newline.
                 const tail = (buffer + decoder.decode()).trim();

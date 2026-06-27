@@ -46,6 +46,10 @@
         "title": "LLM writing tool: Select model"
       },
       {
+        "command": "lm-writing-tool.selectLanguage",
+        "title": "LLM writing tool: Select language"
+      },
+      {
         "command": "lm-writing-tool.resetPrompts",
         "title": "LLM writing tool: Reset prompts to defaults"
       },
@@ -57,20 +61,25 @@
     "configuration": {
       "title": "LLM Writing Tool",
       "properties": {
+        "lmWritingTool.language": {
+          "type": "string",
+          "default": "American English",
+          "description": "The language to proofread, rewrite, and find synonyms in. Used by the default prompts via the {language} placeholder. Set it quickly with the 'LLM writing tool: Select language' command. Examples: 'British English', 'German', 'French'."
+        },
         "lmWritingTool.prompts.proofreading": {
           "type": "string",
-          "default": "Proofread the following message in American English. If it is gramatically correct, just respond with the word \"Correct\". If it is gramatically incorrect or has spelling mistakes, respond with \"Correction: \", followed by the corrected version. If you make a correction, write the whole corrected text, not just the segments with corrections. Do not add additional text or explanations. Do not change special commands, code, escape characters, or mathematical formulas. Only correct grammatical issues, do not change the content:\n{text}",
-          "description": "System prompt for proofreading text. Use {text} as a placeholder for the text to be proofread."
+          "default": "Proofread the following message in {language}. If it is gramatically correct, just respond with the word \"Correct\". If it is gramatically incorrect or has spelling mistakes, respond with \"Correction: \", followed by the corrected version. If you make a correction, write the whole corrected text, not just the segments with corrections. Do not add additional text or explanations. Do not change special commands, code, escape characters, or mathematical formulas. Only correct grammatical issues, do not change the content:\n{text}",
+          "description": "System prompt for proofreading text. Use {text} as a placeholder for the text to be proofread and {language} for the configured language."
         },
         "lmWritingTool.prompts.rewrite": {
           "type": "string",
-          "default": "Rewrite the following text for clarity in American English. Do not change special commands, code, escape characters, or mathematical formulas. Respond just with the rewritten version of the text, no extra explanation:\n{text}",
-          "description": "System prompt for rewriting text. Use {text} as a placeholder for the text to be rewritten."
+          "default": "Rewrite the following text for clarity in {language}. Do not change special commands, code, escape characters, or mathematical formulas. Respond just with the rewritten version of the text, no extra explanation:\n{text}",
+          "description": "System prompt for rewriting text. Use {text} as a placeholder for the text to be rewritten and {language} for the configured language."
         },
         "lmWritingTool.prompts.synonyms": {
           "type": "string",
-          "default": "Give up to 5 synonyms for the expression \"{expression}\". Just respond with the synonyms, separated by newlines. No extra explanation or context needed.",
-          "description": "System prompt for finding synonyms. Use {expression} as a placeholder for the expression to find synonyms for."
+          "default": "Give up to 5 synonyms in {language} for the expression \"{expression}\". Just respond with the synonyms, separated by newlines. No extra explanation or context needed.",
+          "description": "System prompt for finding synonyms. Use {expression} as a placeholder for the expression to find synonyms for and {language} for the configured language."
         },
         "lmWritingTool.ollama.model": {
           "type": "string",

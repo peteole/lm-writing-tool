@@ -72,25 +72,30 @@ class LMWritingTool {
 		//this.lmCallback = lmCallback;
 	}
 
+	private getLanguage(): string {
+		const config = vscode.workspace.getConfiguration('lmWritingTool');
+		return config.get<string>('language') || 'American English';
+	}
+
 	private getProofreadingPrompt(text: string): string {
 		const config = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 		const template = config.get<string>('proofreading') ||
-			'Proofread the following message in American English. If it is gramatically correct, just respond with the word "Correct". If it is gramatically incorrect or has spelling mistakes, respond with "Correction: ", followed by the corrected version. If you make a correction, write the whole corrected text, not just the segments with corrections. Do not add additional text or explanations. Do not change special commands, code, escape characters, or mathematical formulas. Only correct grammatical issues, do not change the content:\n{text}';
-		return template.replace('{text}', text);
+			'Proofread the following message in {language}. If it is gramatically correct, just respond with the word "Correct". If it is gramatically incorrect or has spelling mistakes, respond with "Correction: ", followed by the corrected version. If you make a correction, write the whole corrected text, not just the segments with corrections. Do not add additional text or explanations. Do not change special commands, code, escape characters, or mathematical formulas. Only correct grammatical issues, do not change the content:\n{text}';
+		return template.replace('{language}', this.getLanguage()).replace('{text}', text);
 	}
 
 	private getRewritePrompt(text: string): string {
 		const config = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 		const template = config.get<string>('rewrite') ||
-			'Rewrite the following text for clarity in American English. Do not change special commands, code, escape characters, or mathematical formulas. Respond just with the rewritten version of the text, no extra explanation:\n{text}';
-		return template.replace('{text}', text);
+			'Rewrite the following text for clarity in {language}. Do not change special commands, code, escape characters, or mathematical formulas. Respond just with the rewritten version of the text, no extra explanation:\n{text}';
+		return template.replace('{language}', this.getLanguage()).replace('{text}', text);
 	}
 
 	private getSynonymsPrompt(expression: string): string {
 		const config = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 		const template = config.get<string>('synonyms') ||
-			'Give up to 5 synonyms for the expression "{expression}". Just respond with the synonyms, separated by newlines. No extra explanation or context needed.';
-		return template.replace('{expression}', expression);
+			'Give up to 5 synonyms in {language} for the expression "{expression}". Just respond with the synonyms, separated by newlines. No extra explanation or context needed.';
+		return template.replace('{language}', this.getLanguage()).replace('{expression}', expression);
 	}
 	async getFullResponse(prompt: string, token: vscode.CancellationToken): Promise<string | undefined> {
 		try {
@@ -552,6 +557,49 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('lm-writing-tool.selectLanguage', async () => {
+			const commonLanguages = [
+				'American English',
+				'British English',
+				'German',
+				'French',
+				'Spanish',
+				'Italian',
+				'Portuguese',
+				'Dutch',
+				'Polish',
+				'Russian',
+				'Chinese',
+				'Japanese',
+				'Korean',
+				'Other (enter manually)',
+			];
+			const pick = await vscode.window.showQuickPick(commonLanguages, {
+				placeHolder: 'Select the language to check and write in',
+			});
+			if (!pick) {
+				return;
+			}
+			let language = pick;
+			if (pick === 'Other (enter manually)') {
+				const custom = await vscode.window.showInputBox({
+					prompt: 'Enter the language to use (e.g. "Brazilian Portuguese")',
+					placeHolder: 'Language',
+				});
+				if (!custom) {
+					return;
+				}
+				language = custom.trim();
+			}
+			await vscode.workspace.getConfiguration('lmWritingTool').update('language', language, vscode.ConfigurationTarget.Global);
+			if (_lmwt) {
+				_lmwt.diagnosticsCache.clear();
+			}
+			vscode.window.showInformationMessage(`LLM Writing Tool language set to: ${language}`);
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand('lm-writing-tool.resetPrompts', async () => {
 			const config = vscode.workspace.getConfiguration('lmWritingTool.prompts');
 
@@ -576,6 +624,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			// Reset Ollama model to default
 			await ollamaConfig.update('model', undefined, vscode.ConfigurationTarget.Global);
+
+			// Reset language to default
+			await vscode.workspace.getConfiguration('lmWritingTool').update('language', undefined, vscode.ConfigurationTarget.Global);
 
 			vscode.window.showInformationMessage('All extension settings have been reset to their default values');
 		})
